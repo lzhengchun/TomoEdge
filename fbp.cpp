@@ -24,8 +24,10 @@ int main(int argc, char const *argv[])
     const unsigned int recon_buf_sz = col_size * col_size * n_slice;
     const unsigned int sino_buf_sz  = col_size * n_theta  * n_slice;
 
-    float2* recon_buf = new float2[recon_buf_sz]();
+    // use unified memory address will help becuase CPU and GPU shares the same memory on TX2
+    float2* recon_buf = new float2[recon_buf_sz](); 
     float2* sino_buf  = new float2[sino_buf_sz]();
+    // cudaMallocHost((void **)&sino_buf, sino_buf_sz * sizeof(float2), cudaHostAllocDefault);
 
     std::ifstream sino_fin("sino-complex.bin", std::ios::binary);
     sino_fin.read((char *)sino_buf, sizeof(float2) * sino_buf_sz);
@@ -36,15 +38,16 @@ int main(int argc, char const *argv[])
         printf("Error while load sinogram! EoF reached, only %ld bytes could be read\n", sino_fin.gcount());
         exit(-1);
     }
-    // printf("1st pixel in sino is %f + i%f\n", sino_buf[0].x, sino_buf[0].y);
+
+    auto e2e_st = chrono::steady_clock::now();
     fbp fbp_cu(theta, rot_center, n_theta, n_slice, col_size);
-    
     auto comp_st = chrono::steady_clock::now();
     fbp_cu.adj(recon_buf, sino_buf);
-
     auto comp_ed = chrono::steady_clock::now();
-    printf("It takes %.3f ms to reconstruct!\n", \
-        chrono::duration_cast<chrono::microseconds>(comp_ed - comp_st).count()/1000.);
+
+    printf("It takes %.3f ms to setup and %.3f ms to reconstruct!\n", \
+           chrono::duration_cast<chrono::microseconds>(comp_st - e2e_st ).count()/1000.,\
+           chrono::duration_cast<chrono::microseconds>(comp_ed - comp_st).count()/1000.);
 
     float checksum_real = 0, checksum_imag = 0;
     for (size_t i = 0; i < recon_buf_sz; i++){

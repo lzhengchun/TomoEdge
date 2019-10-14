@@ -13,7 +13,7 @@ inline void cudaAssert(cudaError_t code, string file, int line){
     }
 }
 
-fbp::fbp(float* theta_, float center_, unsigned int Ntheta_, unsigned int Nz_, unsigned int N_){
+fbp::fbp(float* theta_, float center_, int Ntheta_, int Nz_, int N_){
     N = N_;
     Ntheta = Ntheta_;
     Nz = Nz_;
@@ -32,34 +32,21 @@ fbp::fbp(float* theta_, float center_, unsigned int Ntheta_, unsigned int Nz_, u
     cudaErrchk( cudaMalloc((void **)&x, N * Ntheta * sizeof(float)) );
     cudaErrchk( cudaMalloc((void **)&y, N * Ntheta * sizeof(float)) );
     cudaErrchk( cudaMalloc((void **)&theta, Ntheta * sizeof(float)) );
-    cudaErrchk( cudaMalloc((void **)&shiftfwd, N * sizeof(float2)) );
     cudaErrchk( cudaMalloc((void **)&shiftadj, N * sizeof(float2)) );
 
     // init 2d FFTs
-    int ffts[2];
-    int idist;
-    int odist;
-    int inembed[2];
-    int onembed[2];
-    //fft 2d
-    ffts[0] = 2 * N;
-    ffts[1] = 2 * N;
-    idist = 2 * N * 2 * N;
-    odist = (2 * N + 2 * M) * (2 * N + 2 * M);
-    inembed[0] = 2 * N;
-    inembed[1] = 2 * N;
-    onembed[0] = 2 * N + 2 * M;
-    onembed[1] = 2 * N + 2 * M;
-    auto cufft_ret = cufftPlanMany(&plan2dfwd, 2, ffts, inembed, 1, idist, onembed, 1, odist, CUFFT_C2C, Nz);
+    int ffts[2] = {2 * N, 2 * N};
+    int idist = 2 * N * 2 * N;
+    int odist = (2 * N + 2 * M) * (2 * N + 2 * M);
+    int inembed[2] = {2 * N, 2 * N};
+    int onembed[2] = {2 * N + 2 * M, 2 * N + 2 * M};
+
+    auto cufft_ret = cufftPlanMany(&plan2dadj, 2, ffts, onembed, 1, odist, inembed, 1, idist, CUFFT_C2C, Nz);
     if(cufft_ret != CUFFT_SUCCESS){
         printf("CUFFT error: cufftPlanMany failed, file: %s, line: %d\n", __FILE__, __LINE__);
         return;
     }
-    cufft_ret = cufftPlanMany(&plan2dadj, 2, ffts, onembed, 1, odist, inembed, 1, idist, CUFFT_C2C, Nz);
-    if(cufft_ret != CUFFT_SUCCESS){
-        printf("CUFFT error: cufftPlanMany failed, file: %s, line: %d\n", __FILE__, __LINE__);
-        return;
-    }
+
     // init 1d FFTs
     ffts[0] = N;
     idist = N;
@@ -100,10 +87,6 @@ fbp::fbp(float* theta_, float center_, unsigned int Ntheta_, unsigned int Nz_, u
     takexy<<<GS2d0, BS3d>>>(x, y, theta, N, Ntheta);
     cudaErrchk(cudaPeekAtLastError());
 
-    // compute shifts with respect to the rotation center
-    takeshift<<<ceil(N/1024.0), 1024>>>(shiftfwd, -(center - N / 2.0), N);
-    cudaErrchk(cudaPeekAtLastError());
-
     takeshift<<<ceil(N/1024.0), 1024>>>(shiftadj, (center - N / 2.0), N);
     cudaErrchk(cudaPeekAtLastError());
 }
@@ -115,39 +98,9 @@ fbp::~fbp(){
     cudaFree(fdee);
     cudaFree(x);
     cudaFree(y);
-    cudaFree(shiftfwd);
     cudaFree(shiftadj);
-    cufftDestroy(plan2dfwd);
     cufftDestroy(plan2dadj);
     cufftDestroy(plan1d);
-}
-
-void fbp::fwd(float2* g_, float2* f_){
-    // copy data, init arrays with 0
-    cudaMemcpy(f, f_, N * N * Nz * sizeof(float2), cudaMemcpyDefault);
-    cudaMemset(fde, 0, 2 * N * 2 * N * Nz * sizeof(float2));
-    cudaMemset(fdee, 0, (2 * N + 2 * M) * (2 * N + 2 * M) * Nz * sizeof(float2));
-    cudaMemset(g, N * Ntheta * Nz * sizeof(float2), cudaMemcpyDefault);
-
-    // divide by the USFFT kernel function with padding
-    divphi<<<GS3d0, BS3d>>>(fde, f, mu, N, Nz);
-    // 2d FFT
-    fftshiftc<<<GS3d1, BS3d>>>(fde, 2 * N, Nz);
-    cufftExecC2C(plan2dfwd, (cufftComplex *)fde, (cufftComplex *)&fdee[M + M * (2 * N + 2 * M)], CUFFT_FORWARD);
-    fftshiftc<<<GS3d2, BS3d>>>(fdee, 2 * N + 2 * M, Nz);
-    // wrap frequencies
-    wrap<<<GS3d2, BS3d>>>(fdee, N, Nz, M);
-    // gathering to the polar grid
-    gather<<<GS3d3, BS3d>>>(g, fdee, x, y, M, mu, N, Ntheta, Nz);
-    // shift with respect to given center
-    shift<<<GS3d3, BS3d>>>(g,shiftfwd, N, Ntheta, Nz);
-    // 1d IFFT
-    fftshift1c<<<GS3d3, BS3d>>>(g, N, Ntheta, Nz);
-    cufftExecC2C(plan1d, (cufftComplex *)g, (cufftComplex *)g, CUFFT_INVERSE);
-    fftshift1c<<<GS3d3, BS3d>>>(g, N, Ntheta, Nz);
-
-    // copy result to cpu
-    cudaMemcpy(g_, g, N * Ntheta * Nz * sizeof(float2), cudaMemcpyDefault);
 }
 
 void fbp::adj(float2* f_, float2* g_){
