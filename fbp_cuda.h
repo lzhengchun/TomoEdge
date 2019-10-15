@@ -1,4 +1,9 @@
 #include <cufft.h>
+#include <iostream>
+
+using namespace std;
+
+
 
 class fbp
 {

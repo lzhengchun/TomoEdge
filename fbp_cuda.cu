@@ -20,7 +20,7 @@ fbp::fbp(float* theta_, float center_, int Ntheta_, int Nz_, int N_){
     center = center_;
 
     // USFFT parameters
-    float eps = 1e-3;
+    float eps = 1e-4;
     mu = -log(eps) / (2 * N * N);
     M = ceil(2 * N * 1 / PI * sqrt(-mu * log(eps) + (mu * N) * (mu * N) / 4));
 

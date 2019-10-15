@@ -158,10 +158,9 @@ void __global__ scatter(float2 *f, float2 *g, float *x, float *y, int M, float m
             float w0 = ell0 / (float)(2 * N) - x0;
             float w1 = ell1 / (float)(2 * N) - y0;
             float w = PI / (sqrtf(mu * mu)) * __expf(-PI * PI / mu * (w0 * w0) - PI * PI / mu * (w1 * w1));
-            float *fx = &(f[N + M + ell0 + (2 * N + 2 * M) * (N + M + ell1) + tz * (2 * N + 2 * M) * (2 * N + 2 * M)].x);
-            float *fy = &(f[N + M + ell0 + (2 * N + 2 * M) * (N + M + ell1) + tz * (2 * N + 2 * M) * (2 * N + 2 * M)].y);
-            atomicAdd(fx, w * g0.x);
-            atomicAdd(fy, w * g0.y);
+            int g_idx = N + M + ell0 + (2 * N + 2 * M) * (N + M + ell1) + tz * (2 * N + 2 * M) * (2 * N + 2 * M);
+            atomicAdd(&(f[g_idx].x), w * g0.x);
+            atomicAdd(&(f[g_idx].y), w * g0.y);
         }
     }
 }
