@@ -176,7 +176,7 @@ void tomoGAN::conv2d(uint32 in_ch, uint8 knl_sz, uint32 n_knl, \
                                tensor_out_desc, mem_out));
 
     if(relu){
-        alpha = 1, beta = 1;
+        alpha = 1, beta = 0;
         cudnnErrchk(cudnnActivationForward(cudnn_handle,
                                            relu_activ_desc,
                                            &alpha,
@@ -257,9 +257,9 @@ void tomoGAN::predict(float *img_in, float *img_out){
     conv2d(conv_ch[7], conv_sz[7], n_conv[7], layer_buf1, layer_buf2, weights_d[7], tmp_tensor_desc1, tmp_tensor_desc2, true);
     // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
-    cudaErrchk( cudaMemcpy(img_out, layer_buf2, 128 * 128 * 128 * sizeof(float), cudaMemcpyDeviceToHost) );
-
     auto predict_ed = chrono::steady_clock::now();
     printf("It takes %.3f ms to predict (inference)!\n", \
            chrono::duration_cast<chrono::microseconds>(predict_ed - predict_st ).count()/1000.);
+    
+    cudaErrchk( cudaMemcpy(img_out, layer_buf2, 128 * 128 * 128 * sizeof(float), cudaMemcpyDeviceToHost) );
 }
