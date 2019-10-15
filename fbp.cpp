@@ -1,7 +1,6 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
-#include <cuda.h>
 
 #include "fbp_cuda.h"
 

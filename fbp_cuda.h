@@ -1,9 +1,18 @@
+#include <cuda.h>
+#include <cudnn.h>
 #include <cufft.h>
+#include <string>
 #include <iostream>
 
 using namespace std;
 
-
+#define cudaErrchk(ans)  cudaAssert((ans), __FILE__, __LINE__) 
+inline void cudaAssert(cudaError_t code, string file, int line){
+    if (code != cudaSuccess){
+        cerr << "CUDA Error: " << cudaGetErrorString(code) << "; file: " << file << ", line:" << line << endl;
+        exit(-1);
+    }
+}
 
 class fbp
 {

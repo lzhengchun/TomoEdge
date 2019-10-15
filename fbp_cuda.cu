@@ -5,14 +5,6 @@
 
 using namespace std;
 
-#define cudaErrchk(ans)  cudaAssert((ans), __FILE__, __LINE__) 
-inline void cudaAssert(cudaError_t code, string file, int line){
-    if (code != cudaSuccess){
-        cerr << "CUDA Error: " << cudaGetErrorString(code) << "; file: " << file << ", line:" << line << endl;
-        exit(-1);
-    }
-}
-
 fbp::fbp(float* theta_, float center_, int Ntheta_, int Nz_, int N_){
     N = N_;
     Ntheta = Ntheta_;
@@ -20,7 +12,7 @@ fbp::fbp(float* theta_, float center_, int Ntheta_, int Nz_, int N_){
     center = center_;
 
     // USFFT parameters
-    float eps = 1e-4;
+    float eps = 1e-3;
     mu = -log(eps) / (2 * N * N);
     M = ceil(2 * N * 1 / PI * sqrt(-mu * log(eps) + (mu * N) * (mu * N) / 4));
 
