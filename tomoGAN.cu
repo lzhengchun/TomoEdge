@@ -95,10 +95,6 @@ void tomoGAN::conv2d(uint32 in_ch, uint8 knl_sz, uint32 n_knl, \
                      cudnnTensorDescriptor_t &tensor_in_desc, \
                      cudnnTensorDescriptor_t &tensor_out_desc, 
                      bool relu){
-    // int n, c, h, w, ns, cs, hs, ws;
-    // cudnnDataType_t dt;
-    // cudnnErrchk(cudnnGetTensor4dDescriptor(tensor_in_desc, &dt, &n, &c, &h, &w, &ns, &cs, &hs, &ws));
-
     cudnnFilterDescriptor_t kernel_desc;
     cudnnErrchk(cudnnCreateFilterDescriptor(&kernel_desc));
     cudnnErrchk(cudnnSetFilter4dDescriptor(kernel_desc,
@@ -167,11 +163,11 @@ void tomoGAN::conv2d(uint32 in_ch, uint8 knl_sz, uint32 n_knl, \
     cudaFree(d_workspace);
 
     // add bias
-    beta = 1;
+    alpha = 1, beta = 1;
     cudnnErrchk(cudnnSetTensor4dDescriptor(bias_desc, 
                                            CUDNN_TENSOR_NCHW, 
                                            CUDNN_DATA_FLOAT, 
-                                           1, out_c, 1, 1));
+                                           1, n_knl, 1, 1));
 
     cudnnErrchk(cudnnAddTensor(cudnn_handle,
                                &alpha, 
@@ -179,13 +175,15 @@ void tomoGAN::conv2d(uint32 in_ch, uint8 knl_sz, uint32 n_knl, \
                                &beta,
                                tensor_out_desc, mem_out));
 
-    if(!relu) return;                           
-    cudnnErrchk(cudnnActivationForward(cudnn_handle,
-                                       relu_activ_desc,
-                                       &alpha,
-                                       tensor_out_desc, mem_out,
-                                       &beta,
-                                       tensor_out_desc, mem_out));
+    if(relu){
+        alpha = 1, beta = 1;
+        cudnnErrchk(cudnnActivationForward(cudnn_handle,
+                                           relu_activ_desc,
+                                           &alpha,
+                                           tensor_out_desc, mem_out,
+                                           &beta,
+                                           tensor_out_desc, mem_out));
+    }
 
 }
 
@@ -207,12 +205,6 @@ void tomoGAN::printf_layer_io(cudnnTensorDescriptor_t tensor_in, cudnnTensorDesc
 }
 
 void tomoGAN::predict(float *img_in, float *img_out){
-    auto predict_st = chrono::steady_clock::now();
-
-    cudaErrchk( cudaMemcpy(input_buf, img_in, \
-                           n_img_in * c_img_in * h_img_in * w_img_in * sizeof(float), \
-                           cudaMemcpyHostToDevice) );
-
     cudnnTensorDescriptor_t tmp_tensor_desc1, tmp_tensor_desc2;
     cudnnErrchk(cudnnCreateTensorDescriptor(&tmp_tensor_desc1));
     cudnnErrchk(cudnnSetTensor4dDescriptor(tmp_tensor_desc1, 
@@ -222,42 +214,48 @@ void tomoGAN::predict(float *img_in, float *img_out){
 
     cudnnErrchk(cudnnCreateTensorDescriptor(&tmp_tensor_desc2));
 
+    cudaErrchk( cudaMemcpy(input_buf, img_in, \
+                           n_img_in * c_img_in * h_img_in * w_img_in * sizeof(float), \
+                           cudaMemcpyHostToDevice) );
+
+    auto predict_st = chrono::steady_clock::now();
+
     conv2d(conv_ch[0], conv_sz[0], n_conv[0],  input_buf, layer_buf1,   weights_d[0], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
+    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
     //box 1
     conv2d(conv_ch[1], conv_sz[1], n_conv[1], layer_buf1, layer_buf2,   weights_d[1], tmp_tensor_desc2, tmp_tensor_desc1, true);
-    printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
+    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
 
     conv2d(conv_ch[2], conv_sz[2], n_conv[2], layer_buf2, box1_out_buf, weights_d[2], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
+    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
     maxpooling(box1_out_buf, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
-    printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
+    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
     
     // box 2
     conv2d(conv_ch[3], conv_sz[3], n_conv[3], layer_buf1, layer_buf2,   weights_d[3], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
+    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
     conv2d(conv_ch[4], conv_sz[4], n_conv[4], layer_buf2, box2_out_buf, weights_d[4], tmp_tensor_desc2, tmp_tensor_desc1, true);
-    printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
+    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
 
     maxpooling(box2_out_buf, layer_buf1, tmp_tensor_desc1, tmp_tensor_desc2);
-    printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
+    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
     // box 3
     conv2d(conv_ch[5], conv_sz[5], n_conv[5], layer_buf1, layer_buf2,   weights_d[5], tmp_tensor_desc2, tmp_tensor_desc1, true);
-    printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
+    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
 
     conv2d(conv_ch[6], conv_sz[6], n_conv[6], layer_buf2, box3_out_buf, weights_d[6], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
+    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
     maxpooling(box3_out_buf, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
-    printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
+    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
 
     // intermediate 
     conv2d(conv_ch[7], conv_sz[7], n_conv[7], layer_buf1, layer_buf2, weights_d[7], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
+    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
     cudaErrchk( cudaMemcpy(img_out, layer_buf2, 128 * 128 * 128 * sizeof(float), cudaMemcpyDeviceToHost) );
 
