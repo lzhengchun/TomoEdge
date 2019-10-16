@@ -41,10 +41,14 @@ class tomoGAN
     cudnnActivationDescriptor_t relu_activ_desc;
 
     // network description            0  1   2   3   4   5    6    7    8    9   10   11  12   13  14  15  16  17  18
-    const unsigned int conv_ch[19] = {3, 8,  32, 32, 64, 64,  128, 128, 128, 256, 64, 64, 128, 32, 32, 64, 32, 32, 16};
-    const unsigned int  n_conv[19] = {8, 32, 32, 64, 64, 128, 128, 128, 128, 64,  64, 64, 32,  32, 32, 32, 32, 16, 1};
-    const unsigned int conv_sz[19] = {1, 3,  3,  3,   3, 3,   3,   3,   2,   3,   3,  2,  3,   3,  2,  3,  3,  1,  1};
-
+    // const unsigned int conv_ch[19] = {3, 8,  32, 32, 64, 64,  128, 128, 128, 256, 64, 64, 128, 32, 32, 64, 32, 32, 16};
+    // const unsigned int  n_conv[19] = {8, 32, 32, 64, 64, 128, 128, 128, 128, 64,  64, 64, 32,  32, 32, 32, 32, 16, 1};
+    // const unsigned int conv_sz[19] = {1, 3,  3,  3,   3, 3,   3,   3,   2,   3,   3,  2,  3,   3,  2,  3,  3,  1,  1};
+    
+    //                                0    1   2   3   4   5    6    7    8    9   10   11  12  13  14  15
+    const unsigned int conv_ch[16] = {3, 8,  32, 32, 64, 64,  128, 128, 256, 64, 128, 32, 64, 32, 32, 16};
+    const unsigned int  n_conv[16] = {8, 32, 32, 64, 64, 128, 128, 128, 64,  64, 32,  32, 32, 32, 16, 1};
+    const unsigned int conv_sz[16] = {1, 3,  3,  3,   3, 3,   3,   3,   3,   3,  3,   3,   3, 3,  1,  1};
 public:
     tomoGAN(uint32 img_n, uint32 img_c, uint32 img_h, uint32 img_w, float *weights_h);
     ~tomoGAN();
@@ -64,4 +68,8 @@ private:
                 cudnnTensorDescriptor_t &tensor_in_desc, 
                 cudnnTensorDescriptor_t &tensor_out_desc, 
                 bool relu);
+
+    void upsampling(float *mem_in, float *mem_out,
+                    cudnnTensorDescriptor_t &tensor_in_desc, 
+                    cudnnTensorDescriptor_t &tensor_out_desc);
 };

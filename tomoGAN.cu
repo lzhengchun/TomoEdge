@@ -1,5 +1,25 @@
 #include "tomoGAN.h"
 
+void __global__ kernel_upsampling(float *input, uint32 n, uint32 chs, uint32 height, uint32 width, float *output){
+    int t_col = blockDim.x * blockIdx.x + threadIdx.x;
+    int t_row = blockDim.y * blockIdx.y + threadIdx.y;
+    int t_ch  = blockDim.z * blockIdx.z + threadIdx.z;
+    if(t_row >= height || t_col >= width || t_ch >= chs){
+        return;
+    }
+
+    unsigned int urow = 2 * t_row;
+    unsigned int ucol = 2 * t_col;
+    unsigned int uwidth = 2 * width;
+    unsigned int uheight= 2 * height;
+
+    float pixel = input[height * width * t_ch + width * t_row + t_col];
+    output[uheight * uwidth  * t_ch + uwidth * urow + ucol] = pixel;  // [ch][urow][ucol]
+    output[uheight * uwidth  * t_ch + uwidth * (urow+1) + ucol] = pixel;  // [ch][urow+1][ucol] 
+    output[uheight * uwidth  * t_ch + uwidth * urow + (ucol+1)] = pixel;  // [ch][urow][ucol+1]
+    output[uheight * uwidth  * t_ch + uwidth * (urow+1) + (ucol+1)] = pixel;  // [ch][urow+1][ucol+1]
+}
+
 tomoGAN::tomoGAN(uint32 img_n, uint32 img_c, uint32 img_h, uint32 img_w, float *weights_h){
     cudnnErrchk(cudnnCreate(&cudnn_handle));
     n_img_in = img_n;
@@ -52,6 +72,26 @@ tomoGAN::~tomoGAN(){
     cudnnErrchk( cudnnDestroyActivationDescriptor(relu_activ_desc) );
 }
 
+void tomoGAN::upsampling(float *mem_in, float *mem_out,
+                    cudnnTensorDescriptor_t &tensor_in_desc, \
+                    cudnnTensorDescriptor_t &tensor_out_desc){
+
+    int n, c, h, w, ns, cs, hs, ws;
+    cudnnDataType_t dt;
+    cudnnErrchk(cudnnGetTensor4dDescriptor(tensor_in_desc, &dt, &n, &c, &h, &w, &ns, &cs, &hs, &ws));
+
+    cudnnErrchk(cudnnSetTensor4dDescriptor(tensor_out_desc, 
+                                           CUDNN_TENSOR_NCHW,
+                                           CUDNN_DATA_FLOAT,
+                                           n, c, 2*h, 2*w)); 
+
+    dim3 gs, bs(8, 8, 8);
+    gs.x = ceil((float)w / bs.x);
+    gs.y = ceil((float)h / bs.y);
+    gs.z = ceil((float)c / bs.z);
+    kernel_upsampling<<<gs, bs>>>(mem_in, n, c, h, w, mem_out);    
+    cudaDeviceSynchronize();
+}
 void tomoGAN::maxpooling(float *mem_in, float *mem_out,
                         cudnnTensorDescriptor_t &tensor_in_desc, \
                         cudnnTensorDescriptor_t &tensor_out_desc){
@@ -257,9 +297,16 @@ void tomoGAN::predict(float *img_in, float *img_out){
     conv2d(conv_ch[7], conv_sz[7], n_conv[7], layer_buf1, layer_buf2, weights_d[7], tmp_tensor_desc1, tmp_tensor_desc2, true);
     // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
+    upsampling(layer_buf2, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
+    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
+
     auto predict_ed = chrono::steady_clock::now();
-    printf("It takes %.3f ms to predict (inference)!\n", \
-           chrono::duration_cast<chrono::microseconds>(predict_ed - predict_st ).count()/1000.);
-    
-    cudaErrchk( cudaMemcpy(img_out, layer_buf2, 128 * 128 * 128 * sizeof(float), cudaMemcpyDeviceToHost) );
+    size_t mem_free, mem_total;
+    cudaMemGetInfo(&mem_free, &mem_total);
+
+    printf("It takes %.3f ms to predict (inference), %ld out of %ld bytes are free\n", \
+           chrono::duration_cast<chrono::microseconds>(predict_ed - predict_st ).count()/1000., mem_free, mem_total);
+
+
+    cudaErrchk( cudaMemcpy(img_out, layer_buf1, 128 * 256 * 256 * sizeof(float), cudaMemcpyDeviceToHost) );
 }
