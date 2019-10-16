@@ -23,7 +23,16 @@ void __global__ kernel_upsampling(float *input, uint32 n, uint32 chs, uint32 hei
     }
 }
 
-tomoGAN::tomoGAN(uint32 img_n, uint32 img_c, uint32 img_h, uint32 img_w, float *weights_h){
+uint32 tomoGAN::get_n_weights(){
+    uint32 layers = sizeof(conv_ch) / sizeof(uint32);
+    uint32 weight_sz = 0;
+    for (auto l = 0; l < layers; l++){
+        weight_sz += conv_ch[l] * conv_sz[l] * conv_sz[l] * n_conv[l] + n_conv[l];
+    }
+    return weight_sz;
+}
+
+void tomoGAN::model_init(uint32 img_n, uint32 img_c, uint32 img_h, uint32 img_w, float *weights_h){
     cudnnErrchk(cudnnCreate(&cudnn_handle));
     n_img_in = img_n;
     c_img_in = img_c;
@@ -238,6 +247,23 @@ void tomoGAN::prinf_tensor_sz(cudnnTensorDescriptor_t tensor){
     printf("Tensor SZ: %3d x %3d x %3d x %3d \n", n, c, h, w);
 }
 
+void tomoGAN::concat(float *box_out, float *conv_out, float *dst_mem, 
+                     uint32 batch_sz, uint32 c, uint32 h, uint32 w,
+                     cudnnTensorDescriptor_t& out_tensor_desc){
+    uint32 batch_offset = c * h * w;
+    for(auto n = 0; n < batch_sz; n++){
+        cudaErrchk( cudaMemcpy(dst_mem + 2 * n * batch_offset, 
+                               box_out + n * batch_offset, 
+                               batch_offset * sizeof(float), cudaMemcpyDeviceToDevice) );
+
+        cudaErrchk( cudaMemcpy(dst_mem + (2 * n + 1) * batch_offset, 
+                               conv_out + n * batch_offset, 
+                               batch_offset * sizeof(float), cudaMemcpyDeviceToDevice) );
+
+        cudnnErrchk(cudnnSetTensor4dDescriptor(out_tensor_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, batch_sz, c * 2, h, w)); 
+    }
+}
+
 void tomoGAN::printf_layer_io(cudnnTensorDescriptor_t tensor_in, cudnnTensorDescriptor_t tensor_out){
     int n, c, h, w, ns, cs, hs, ws;
     cudnnDataType_t dt;
@@ -267,74 +293,46 @@ void tomoGAN::predict(float *img_in, float *img_out){
     conv2d(conv_ch[0], conv_sz[0], n_conv[0],  input_buf, layer_buf1,   weights_d[0], tmp_tensor_desc1, tmp_tensor_desc2, true);
     // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
-    //box 1
+    // downsampling box 1
     conv2d(conv_ch[1], conv_sz[1], n_conv[1], layer_buf1, layer_buf2,   weights_d[1], tmp_tensor_desc2, tmp_tensor_desc1, true);
-    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
-
     conv2d(conv_ch[2], conv_sz[2], n_conv[2], layer_buf2, box1_out_buf, weights_d[2], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
-
     maxpooling(box1_out_buf, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
-    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
-    
-    // box 2
+
+    // downsampling box 2
     conv2d(conv_ch[3], conv_sz[3], n_conv[3], layer_buf1, layer_buf2,   weights_d[3], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
-
     conv2d(conv_ch[4], conv_sz[4], n_conv[4], layer_buf2, box2_out_buf, weights_d[4], tmp_tensor_desc2, tmp_tensor_desc1, true);
-    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
-
     maxpooling(box2_out_buf, layer_buf1, tmp_tensor_desc1, tmp_tensor_desc2);
-    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
-    // box 3
+    // downsampling box 3
     conv2d(conv_ch[5], conv_sz[5], n_conv[5], layer_buf1, layer_buf2,   weights_d[5], tmp_tensor_desc2, tmp_tensor_desc1, true);
-    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
-
     conv2d(conv_ch[6], conv_sz[6], n_conv[6], layer_buf2, box3_out_buf, weights_d[6], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
-
     maxpooling(box3_out_buf, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
-    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
 
     // intermediate 
     conv2d(conv_ch[7], conv_sz[7], n_conv[7], layer_buf1, layer_buf2, weights_d[7], tmp_tensor_desc1, tmp_tensor_desc2, true);
-    // printf_layer_io(tmp_tensor_desc1, tmp_tensor_desc2);
 
     upsampling(layer_buf2, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
-    // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
     
-    uint32 box3_out_sz = n_img_in * 128 * (h_img_in / 4) * (w_img_in / 4);
-    cudaErrchk( cudaMemcpy(layer_buf2, box3_out_buf, box3_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
-    cudaErrchk( cudaMemcpy(layer_buf2 + box3_out_sz, layer_buf1, box3_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
-    cudnnErrchk(cudnnSetTensor4dDescriptor(tmp_tensor_desc2, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
-                                           n_img_in, 256, (h_img_in / 4), (w_img_in / 4))); 
-
+    // upsampling box 1
+    concat(box3_out_buf, layer_buf1, layer_buf2, n_img_in, 128, h_img_in / 4, w_img_in / 4, tmp_tensor_desc2);
     conv2d(conv_ch[8], conv_sz[8], n_conv[8], layer_buf2, layer_buf1, weights_d[8], tmp_tensor_desc2, tmp_tensor_desc1, true);
     conv2d(conv_ch[9], conv_sz[9], n_conv[9], layer_buf1, layer_buf2, weights_d[9], tmp_tensor_desc1, tmp_tensor_desc2, true);
     
     upsampling(layer_buf2, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
 
-    uint32 box2_out_sz = n_img_in * 64 * (h_img_in / 2) * (w_img_in / 2);
-    cudaErrchk( cudaMemcpy(layer_buf2, box2_out_buf, box2_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
-    cudaErrchk( cudaMemcpy(layer_buf2 + box2_out_sz, layer_buf1, box2_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
-    cudnnErrchk(cudnnSetTensor4dDescriptor(tmp_tensor_desc1, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
-                                           n_img_in, 128, (h_img_in / 2), (w_img_in / 2))); 
-
+    // upsampling box 2
+    concat(box2_out_buf, layer_buf1, layer_buf2, n_img_in, 64, h_img_in / 2, w_img_in / 2, tmp_tensor_desc1);
     conv2d(conv_ch[10], conv_sz[10], n_conv[10], layer_buf2, layer_buf1, weights_d[10], tmp_tensor_desc1, tmp_tensor_desc2, true);
     conv2d(conv_ch[11], conv_sz[11], n_conv[11], layer_buf1, layer_buf2, weights_d[11], tmp_tensor_desc2, tmp_tensor_desc1, true);
 
     upsampling(layer_buf2, layer_buf1, tmp_tensor_desc1, tmp_tensor_desc2);
 
-    uint32 box1_out_sz = n_img_in * 32 * h_img_in * w_img_in;
-    cudaErrchk( cudaMemcpy(layer_buf2, box1_out_buf, box1_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
-    cudaErrchk( cudaMemcpy(layer_buf2 + box1_out_sz, layer_buf1, box1_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
-    cudnnErrchk(cudnnSetTensor4dDescriptor(tmp_tensor_desc1, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
-                                           n_img_in, 64, h_img_in, w_img_in)); 
-
+    // upsampling box 3
+    concat(box1_out_buf, layer_buf1, layer_buf2, n_img_in, 32, h_img_in, w_img_in, tmp_tensor_desc1);
     conv2d(conv_ch[12], conv_sz[12], n_conv[12], layer_buf2, layer_buf1, weights_d[12], tmp_tensor_desc1, tmp_tensor_desc2, true);
     conv2d(conv_ch[13], conv_sz[13], n_conv[13], layer_buf1, layer_buf2, weights_d[13], tmp_tensor_desc2, tmp_tensor_desc1, true);
-
+    
+    // output layers
     conv2d(conv_ch[14], conv_sz[14], n_conv[14], layer_buf2, layer_buf1, weights_d[14], tmp_tensor_desc1, tmp_tensor_desc2, true);
     conv2d(conv_ch[15], conv_sz[15], n_conv[15], layer_buf1, layer_buf2, weights_d[15], tmp_tensor_desc2, tmp_tensor_desc1, false);
 
@@ -344,7 +342,6 @@ void tomoGAN::predict(float *img_in, float *img_out){
 
     printf("It takes %.3f ms to predict (inference), %ld out of %ld bytes are free\n", \
            chrono::duration_cast<chrono::microseconds>(predict_ed - predict_st ).count()/1000., mem_free, mem_total);
-
 
     cudaErrchk( cudaMemcpy(img_out, layer_buf2, n_img_in * 1 * h_img_in * w_img_in * sizeof(float), cudaMemcpyDeviceToHost) );
 }
