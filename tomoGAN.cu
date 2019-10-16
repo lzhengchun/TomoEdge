@@ -13,11 +13,14 @@ void __global__ kernel_upsampling(float *input, uint32 n, uint32 chs, uint32 hei
     unsigned int uwidth = 2 * width;
     unsigned int uheight= 2 * height;
 
-    float pixel = input[height * width * t_ch + width * t_row + t_col];
-    output[uheight * uwidth  * t_ch + uwidth * urow + ucol] = pixel;  // [ch][urow][ucol]
-    output[uheight * uwidth  * t_ch + uwidth * (urow+1) + ucol] = pixel;  // [ch][urow+1][ucol] 
-    output[uheight * uwidth  * t_ch + uwidth * urow + (ucol+1)] = pixel;  // [ch][urow][ucol+1]
-    output[uheight * uwidth  * t_ch + uwidth * (urow+1) + (ucol+1)] = pixel;  // [ch][urow+1][ucol+1]
+    unsigned int n_offset = height * width * chs;
+    for(uint i = 0; i < n; i++){
+        float pixel = input[i * n_offset + height * width * t_ch + width * t_row + t_col];
+        output[i * 4 * n_offset + uheight * uwidth  * t_ch + uwidth * urow + ucol] = pixel;  // [ch][urow][ucol]
+        output[i * 4 * n_offset + uheight * uwidth  * t_ch + uwidth * (urow+1) + ucol] = pixel;  // [ch][urow+1][ucol] 
+        output[i * 4 * n_offset + uheight * uwidth  * t_ch + uwidth * urow + (ucol+1)] = pixel;  // [ch][urow][ucol+1]
+        output[i * 4 * n_offset + uheight * uwidth  * t_ch + uwidth * (urow+1) + (ucol+1)] = pixel;  // [ch][urow+1][ucol+1]
+    }
 }
 
 tomoGAN::tomoGAN(uint32 img_n, uint32 img_c, uint32 img_h, uint32 img_w, float *weights_h){
@@ -35,14 +38,14 @@ tomoGAN::tomoGAN(uint32 img_n, uint32 img_c, uint32 img_h, uint32 img_w, float *
     
     cudaErrchk( cudaMalloc((void **)&input_buf,  img_n * img_c * img_h * img_w * sizeof(float)) );
     cudaErrchk( cudaMalloc((void **)&output_buf, img_n * 1     * img_h * img_w * sizeof(float)) );
-    cudaErrchk( cudaMalloc((void **)&layer_buf1, img_n * 32    * img_h * img_w * sizeof(float)) );
-    cudaErrchk( cudaMalloc((void **)&layer_buf2, img_n * 64    * img_h * img_w * sizeof(float)) );
+    cudaErrchk( cudaMalloc((void **)&layer_buf1, img_n * 64    * img_h * img_w * sizeof(float)) );
+    cudaErrchk( cudaMalloc((void **)&layer_buf2, img_n * 32    * img_h * img_w * sizeof(float)) );
     cudaErrchk( cudaMalloc((void **)&box1_out_buf, img_n * 32  * box1_o_sz_h * box1_o_sz_w * sizeof(float)) );
     cudaErrchk( cudaMalloc((void **)&box2_out_buf, img_n * 64  * box2_o_sz_h * box2_o_sz_w * sizeof(float)) );
     cudaErrchk( cudaMalloc((void **)&box3_out_buf, img_n * 128 * box3_o_sz_h * box3_o_sz_w * sizeof(float)) );
 
     uint32 w_acc_sz = 0;
-    for(auto i = 0; i <= 18; i++){
+    for(auto i = 0; i <= 15; i++){
         auto w_sz = conv_sz[i] * conv_sz[i] * conv_ch[i] * n_conv[i] + n_conv[i];
         cudaErrchk( cudaMalloc((void **)&(weights_d[i]), w_sz * sizeof(float)) );
         cudaErrchk( cudaMemcpy(weights_d[i], weights_h + w_acc_sz, w_sz * sizeof(float), cudaMemcpyHostToDevice) );
@@ -92,6 +95,7 @@ void tomoGAN::upsampling(float *mem_in, float *mem_out,
     kernel_upsampling<<<gs, bs>>>(mem_in, n, c, h, w, mem_out);    
     cudaDeviceSynchronize();
 }
+
 void tomoGAN::maxpooling(float *mem_in, float *mem_out,
                         cudnnTensorDescriptor_t &tensor_in_desc, \
                         cudnnTensorDescriptor_t &tensor_out_desc){
@@ -299,6 +303,40 @@ void tomoGAN::predict(float *img_in, float *img_out){
 
     upsampling(layer_buf2, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
     // printf_layer_io(tmp_tensor_desc2, tmp_tensor_desc1);
+    
+    uint32 box3_out_sz = n_img_in * 128 * (h_img_in / 4) * (w_img_in / 4);
+    cudaErrchk( cudaMemcpy(layer_buf2, box3_out_buf, box3_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
+    cudaErrchk( cudaMemcpy(layer_buf2 + box3_out_sz, layer_buf1, box3_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
+    cudnnErrchk(cudnnSetTensor4dDescriptor(tmp_tensor_desc2, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
+                                           n_img_in, 256, (h_img_in / 4), (w_img_in / 4))); 
+
+    conv2d(conv_ch[8], conv_sz[8], n_conv[8], layer_buf2, layer_buf1, weights_d[8], tmp_tensor_desc2, tmp_tensor_desc1, true);
+    conv2d(conv_ch[9], conv_sz[9], n_conv[9], layer_buf1, layer_buf2, weights_d[9], tmp_tensor_desc1, tmp_tensor_desc2, true);
+    
+    upsampling(layer_buf2, layer_buf1, tmp_tensor_desc2, tmp_tensor_desc1);
+
+    uint32 box2_out_sz = n_img_in * 64 * (h_img_in / 2) * (w_img_in / 2);
+    cudaErrchk( cudaMemcpy(layer_buf2, box2_out_buf, box2_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
+    cudaErrchk( cudaMemcpy(layer_buf2 + box2_out_sz, layer_buf1, box2_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
+    cudnnErrchk(cudnnSetTensor4dDescriptor(tmp_tensor_desc1, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
+                                           n_img_in, 128, (h_img_in / 2), (w_img_in / 2))); 
+
+    conv2d(conv_ch[10], conv_sz[10], n_conv[10], layer_buf2, layer_buf1, weights_d[10], tmp_tensor_desc1, tmp_tensor_desc2, true);
+    conv2d(conv_ch[11], conv_sz[11], n_conv[11], layer_buf1, layer_buf2, weights_d[11], tmp_tensor_desc2, tmp_tensor_desc1, true);
+
+    upsampling(layer_buf2, layer_buf1, tmp_tensor_desc1, tmp_tensor_desc2);
+
+    uint32 box1_out_sz = n_img_in * 32 * h_img_in * w_img_in;
+    cudaErrchk( cudaMemcpy(layer_buf2, box1_out_buf, box1_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
+    cudaErrchk( cudaMemcpy(layer_buf2 + box1_out_sz, layer_buf1, box1_out_sz * sizeof(float), cudaMemcpyDeviceToDevice) );
+    cudnnErrchk(cudnnSetTensor4dDescriptor(tmp_tensor_desc1, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
+                                           n_img_in, 64, h_img_in, w_img_in)); 
+
+    conv2d(conv_ch[12], conv_sz[12], n_conv[12], layer_buf2, layer_buf1, weights_d[12], tmp_tensor_desc1, tmp_tensor_desc2, true);
+    conv2d(conv_ch[13], conv_sz[13], n_conv[13], layer_buf1, layer_buf2, weights_d[13], tmp_tensor_desc2, tmp_tensor_desc1, true);
+
+    conv2d(conv_ch[14], conv_sz[14], n_conv[14], layer_buf2, layer_buf1, weights_d[14], tmp_tensor_desc1, tmp_tensor_desc2, true);
+    conv2d(conv_ch[15], conv_sz[15], n_conv[15], layer_buf1, layer_buf2, weights_d[15], tmp_tensor_desc2, tmp_tensor_desc1, false);
 
     auto predict_ed = chrono::steady_clock::now();
     size_t mem_free, mem_total;
@@ -308,5 +346,5 @@ void tomoGAN::predict(float *img_in, float *img_out){
            chrono::duration_cast<chrono::microseconds>(predict_ed - predict_st ).count()/1000., mem_free, mem_total);
 
 
-    cudaErrchk( cudaMemcpy(img_out, layer_buf1, 128 * 256 * 256 * sizeof(float), cudaMemcpyDeviceToHost) );
+    cudaErrchk( cudaMemcpy(img_out, layer_buf2, n_img_in * 1 * h_img_in * w_img_in * sizeof(float), cudaMemcpyDeviceToHost) );
 }
