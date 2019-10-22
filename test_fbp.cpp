@@ -10,9 +10,9 @@ using namespace std;
 
 int main(int argc, char const *argv[])
 {
-    const unsigned int n_theta = 1500;
+    const unsigned int n_theta = 1500/15;
     const float rot_center = 1427.;
-    const unsigned int n_slice = 1;
+    const unsigned int n_slice = 2;
     const unsigned int col_size = 2560;
 
     float* theta = new float[n_theta]();
@@ -39,6 +39,11 @@ int main(int argc, char const *argv[])
 
     auto e2e_st = chrono::steady_clock::now();
     fbp fbp_cu(theta, rot_center, n_theta, n_slice, col_size);
+    // warm up for benchmark test
+    for (size_t i = 0; i < 5; i++){
+        fbp_cu.linesum(recon_buf, sino_buf);
+    }
+    
     auto comp_st = chrono::steady_clock::now();
     fbp_cu.linesum(recon_buf, sino_buf);
     auto comp_ed = chrono::steady_clock::now();
@@ -54,7 +59,7 @@ int main(int argc, char const *argv[])
     printf("reconstruction checksum: %.3f\n", checksum);
     
     // dump output array to a file
-    std::ofstream img_fout("output_img.bin", std::ios::out | std::ios::binary);
+    std::ofstream img_fout("fbp-output-img.bin", std::ios::out | std::ios::binary);
     img_fout.write((char *) recon_buf, sizeof(float) * recon_buf_sz );
     img_fout.close();
 

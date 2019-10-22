@@ -12,9 +12,10 @@ void __global__ linesum_ker(float *f, float *g, float *theta, float center, int 
 	float f0 = 0;
 	int s0 = 0;
 	int ind = 0;
-	for (int k = 0; k < Ntheta; k++)
-	{
+	for (int k = 0; k < Ntheta; k++){
+		float theta_k = PI / Ntheta * k;
 		sp = (tx - N / 2) * __cosf(theta[k]) - (ty - N / 2) * __sinf(theta[k]) + center; //polar coordinate
+		// sp = (tx - N / 2) * __cosf(theta_k) - (ty - N / 2) * __sinf(theta_k) + center;
 		//linear interpolation
 		s0 = roundf(sp);
 		ind = k * N * Nz + tz * N + s0;

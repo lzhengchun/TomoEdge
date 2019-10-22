@@ -1,5 +1,5 @@
 #include "gridrec.h"
-#include "kernels.cuh"
+#include "kernels_gridrec.cuh"
 #include <stdio.h>
 #include <iostream>
 
@@ -12,7 +12,7 @@ gridrec::gridrec(float* theta_, float center_, int Ntheta_, int Nz_, int N_){
     center = center_;
 
     // USFFT parameters
-    float eps = 1e-3;
+    float eps = 1e-4;
     mu = -log(eps) / (2 * N * N);
     M = ceil(2 * N * 1 / PI * sqrt(-mu * log(eps) + (mu * N) * (mu * N) / 4));
 
@@ -98,7 +98,7 @@ gridrec::~gridrec(){
 void gridrec::adj(float2* f_, float2* g_){
     size_t mem_free, mem_total;
     cudaMemGetInfo(&mem_free, &mem_total);
-    printf("%ld out of %ld bytes are free\n", mem_free, mem_total);
+    printf("%ld out of %ld bytes are free with GridRec\n", mem_free, mem_total);
 
     // copy data, init arrays with 0
     cudaErrchk( cudaMemcpy(g, g_, N * Ntheta * Nz * sizeof(float2), cudaMemcpyHostToDevice) );

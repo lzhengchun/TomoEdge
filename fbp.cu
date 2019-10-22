@@ -24,8 +24,8 @@ fbp::fbp(float *theta_, float center_, int Ntheta_, int Nz_, int N_)
 	cufftPlanMany(&plan_inverse, 1, ffts, onembed, 1, odist, inembed, 1, idist, CUFFT_C2R, Ntheta * Nz);
 
 	//init thread blocks and block grids
-	BS3d.x = 32;
-	BS3d.y = 32;
+	BS3d.x = 16;
+	BS3d.y = 16;
 	BS3d.z = 1;
 
 	GS3d0.x = ceil(N / (float)BS3d.x);
@@ -52,6 +52,9 @@ fbp::~fbp()
 
 void fbp::linesum(float *f_, float *g_)
 {
+    size_t mem_free, mem_total;
+    cudaMemGetInfo(&mem_free, &mem_total);
+    printf("%ld out of %ld bytes are free with FBP\n", mem_free, mem_total);
 	// copy data, init arrays with 0
 	cudaMemcpy(g, g_, N * Ntheta * Nz * sizeof(float), cudaMemcpyDefault);
 	cudaMemset(f, 0, N * N * Nz * sizeof(float));
