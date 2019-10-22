@@ -41,7 +41,7 @@ int main(int argc, char const *argv[])
     auto e2e_st = chrono::steady_clock::now();
     gridrec gridrec_cu(theta, rot_center, n_theta, n_slice, col_size);
     // warm up for benchmark test
-    for (size_t i = 0; i < 5; i++){
+    for (size_t i = 0; i < 0; i++){
         gridrec_cu.adj(recon_buf, sino_buf);
     }
 
