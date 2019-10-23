@@ -12,7 +12,7 @@ using namespace std;
 int main(int argc, char const *argv[])
 {
     ArgumentParser parser;
-    parser.addArgument("-ss");
+    parser.addArgument("--ss");
 
     parser.parse(argc, argv);
     int ss = parser.retrieve<int>("ss");
