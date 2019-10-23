@@ -5,6 +5,9 @@
 #include <functional>
 #include <chrono>
 #include <queue>
+
+#include <string>
+#include <iostream>
 using namespace std;
 
 // keep smallest k items, the top will the kth largest
@@ -60,5 +63,25 @@ void inplace_scale_2uint8(T *data, size_t len, float down_percentile, float up_p
         data[i] = std::max(data[i], scale_down);
         data[i] = std::min(data[i], scale_up);
         data[i] = scale_factor * (data[i] - scale_down);
+    }
+}
+
+void minmax2uint8_reorder(float *buf_in, float *buf_out, size_t len){
+    float scale_down_ch1 = buf_in[0], scale_up_ch1 = buf_in[0];
+    float scale_down_ch2 = buf_in[1], scale_up_ch2 = buf_in[1];
+
+    for (size_t i = 2; i < len; i+=2){
+        scale_down_ch1 = std::min(scale_down_ch1, buf_in[i]);
+        scale_up_ch1   = std::max(scale_up_ch1, buf_in[i]);
+        scale_down_ch2 = std::min(scale_down_ch2, buf_in[i+1]);
+        scale_up_ch2   = std::max(scale_up_ch2, buf_in[i+1]);
+    }
+    
+    float scale_factor_ch1 = 255 / (scale_up_ch1 - scale_down_ch1);
+    float scale_factor_ch2 = 255 / (scale_up_ch2 - scale_down_ch2);
+    #pragma omp parallel for schedule(static, 2048)
+    for (size_t i = 0; i < len; i+=2){
+        buf_out[i/2] = scale_factor_ch1 * (buf_in[i] - scale_down_ch1);
+        buf_out[i/2+len/2] = scale_factor_ch2 * (buf_in[i+1] - scale_down_ch2);
     }
 }

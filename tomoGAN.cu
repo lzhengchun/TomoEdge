@@ -52,7 +52,7 @@ void tomoGAN::model_init(uint32 img_n, uint32 img_c, uint32 img_h, uint32 img_w,
     cudaErrchk( cudaMalloc((void **)&box1_out_buf, img_n * 32  * box1_o_sz_h * box1_o_sz_w * sizeof(float)) );
     cudaErrchk( cudaMalloc((void **)&box2_out_buf, img_n * 64  * box2_o_sz_h * box2_o_sz_w * sizeof(float)) );
     cudaErrchk( cudaMalloc((void **)&box3_out_buf, img_n * 128 * box3_o_sz_h * box3_o_sz_w * sizeof(float)) );
-
+    
     uint32 w_acc_sz = 0;
     for(auto i = 0; i <= 15; i++){
         auto w_sz = conv_sz[i] * conv_sz[i] * conv_ch[i] * n_conv[i] + n_conv[i];

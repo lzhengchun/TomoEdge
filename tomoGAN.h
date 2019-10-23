@@ -4,29 +4,13 @@
 #include <iostream>
 #include <chrono>
 
+#include "cudaErr.hpp"
+
 #define DEBUG_PRINT true
 using namespace std;
 
 typedef uint32_t uint32;
 typedef uint8_t  uint8;
-
-//function to print out error message from cuDNN calls
-#define cudnnErrchk(exp){ \
-    cudnnStatus_t status = (exp); \
-    if(status != CUDNN_STATUS_SUCCESS) { \
-      std::cerr << "Error in file " << __FILE__ << " on line " << __LINE__ << ": " \
-                << cudnnGetErrorString(status) << std::endl; \
-      std::exit(EXIT_FAILURE); \
-    } \
-  } 
-
-#define cudaErrchk(ans)  cudaAssert((ans), __FILE__, __LINE__) 
-inline void cudaAssert(cudaError_t code, string file, int line){
-    if (code != cudaSuccess){
-        std::cerr << "CUDA Error: " << cudaGetErrorString(code) << "; file: " << file << ", line:" << line << std::endl;
-        exit(-1);
-    }
-}
 
 class tomoGAN
 {
