@@ -3,6 +3,7 @@
 #include <chrono>
 
 #include "gridrec.h"
+#include "argparse.hpp"
 
 #define PI (float)3.14159265358
 
@@ -10,7 +11,13 @@ using namespace std;
 
 int main(int argc, char const *argv[])
 {
-    const unsigned int n_theta = 1500/15;
+    ArgumentParser parser;
+    parser.addArgument("-ss");
+
+    parser.parse(argc, argv);
+    int ss = parser.retrieve<int>("ss");
+
+    const unsigned int n_theta = 1500/ss;
     const float rot_center = 1427.;
     const unsigned int n_slice = 1;
     const unsigned int col_size = 2560;
