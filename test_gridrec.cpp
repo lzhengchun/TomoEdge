@@ -11,12 +11,8 @@ using namespace std;
 
 int main(int argc, char const *argv[])
 {
-    ArgumentParser parser;
-    parser.addArgument("--ss");
-
-    parser.parse(argc, argv);
-    int ss = parser.retrieve<int>("ss");
-
+    int ss = 15;
+    
     const unsigned int n_theta = 1500/ss;
     const float rot_center = 1427.;
     const unsigned int n_slice = 1;
