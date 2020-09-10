@@ -179,23 +179,29 @@ void tomoGAN::conv2d(uint32 in_ch, uint8 knl_sz, uint32 n_knl, \
                                            CUDNN_DATA_FLOAT, /*dataType=*/
                                            out_n, out_c, out_h, out_w)); /*image_width=*/
 
-    cudnnConvolutionFwdAlgo_t conv2d_algo;
-    cudnnErrchk(cudnnGetConvolutionForwardAlgorithm(cudnn_handle,
-                                                    tensor_in_desc,
-                                                    kernel_desc,
-                                                    conv2d_desc,
-                                                    tensor_out_desc,
-                                                    CUDNN_CONVOLUTION_FWD_PREFER_FASTEST,
-                                                    0, /*memoryLimitInBytes=*/
-                                                    &conv2d_algo));
+    // int requestedAlgoCount = CUDNN_CONVOLUTION_FWD_ALGO_COUNT;
+    // int returnedAlgoCount = -1;
+    // cudnnConvolutionFwdAlgoPerf_t algo_perf[CUDNN_CONVOLUTION_FWD_ALGO_COUNT];
+    // cudnnErrchk(cudnnFindConvolutionForwardAlgorithm(cudnn_handle,
+    //                                                  tensor_in_desc,
+    //                                                  kernel_desc,
+    //                                                  conv2d_desc,
+    //                                                  tensor_out_desc,
+    //                                                  requestedAlgoCount,
+    //                                                  &returnedAlgoCount,
+    //                                                  algo_perf));
+    // printf("requestedAlgoCount: %d, returnedAlgoCount: %d, fastest: %d\n", \
+    //        requestedAlgoCount, returnedAlgoCount, algo_perf[0].algo);
 
+    cudnnConvolutionFwdAlgo_t algo = (cudnnConvolutionFwdAlgo_t)CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM;
+    // cudnnConvolutionFwdAlgo_t algo = (cudnnConvolutionFwdAlgo_t)CUDNN_CONVOLUTION_FWD_ALGO_FFT;
     size_t workspace_bytes = 0;
     cudnnErrchk(cudnnGetConvolutionForwardWorkspaceSize(cudnn_handle,
                                                         tensor_in_desc,
                                                         kernel_desc,
                                                         conv2d_desc,
                                                         tensor_out_desc,
-                                                        conv2d_algo,
+                                                        algo,
                                                         &workspace_bytes));
     // std::cout << "Workspace size: " << (workspace_bytes / 1024.) << " KiB" << std::endl;
 
@@ -209,7 +215,7 @@ void tomoGAN::conv2d(uint32 in_ch, uint8 knl_sz, uint32 n_knl, \
                                         &alpha,
                                         tensor_in_desc, mem_in,
                                         kernel_desc, weights,
-                                        conv2d_desc, conv2d_algo,
+                                        conv2d_desc, algo,
                                         d_workspace, workspace_bytes,
                                         &beta,
                                         tensor_out_desc, mem_out));

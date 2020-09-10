@@ -13,10 +13,10 @@ using namespace std;
 int main(int argc, char const *argv[])
 {
     // init Tomo
-    int ss = 15;
+    int ss = 1;
     
     const unsigned int n_theta = 1500/ss;
-    const float rot_center = 1359.5;// * (1024. / 2560.);
+    const float rot_center = 1427;// * (1024. / 2560.);
     const unsigned int n_slice = 1;
     const unsigned int col_size = 2560;
 
@@ -57,7 +57,7 @@ int main(int argc, char const *argv[])
     float2* recon_buf = new float2[recon_buf_sz](); 
     float2* sino_buf  = new float2[sino_buf_sz]();
 
-    std::ifstream sino_fin("sino-complex-ds62-ss15.bin", std::ios::binary);
+    std::ifstream sino_fin("sino-complex.bin", std::ios::binary);
     sino_fin.read((char *)sino_buf, sizeof(float2) * sino_buf_sz);
 
     if(sino_fin){
