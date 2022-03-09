@@ -7,6 +7,7 @@ One may use it for education purpose of cuDNN.
 We used the code for raid computed tomography reconstruction at edge using Jetson TX2. slides page 9 of https://lzhengchun.github.io/file/CELS-coffee-talk-20200415.pdf
 Basically, we used gridrec to get a reasonably ok reconstruction, then use a trained TomoGAN to remove noise and artifacts. 
 So, the overall motivation was to have tomography reconstruction near beamline to guide experiment. 
+
 Please cite our works, as follows, if you used this repo for your research 
 
 ```
